@@ -1,0 +1,215 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(mgm) ## package for Mixed Graphical modeling
+library(devtools) ## package to load latest update of bootnet via github
+library("bootnet") ## main package for estimating of network
+library("qgraph") ## package for vizalisation of network
+library("dplyr") ## package for data manipulation
+library("summarytools") ## package for summarizing data
+library("ggplot2") ## package foo
+library(stats)
+library(readr)
+library(igraph)
+library(reshape2)
+library(data.table)
+```
+
+
+```{r}
+cleanDf <- read.csv("/Volumes/Research Project/Trait Network_Behaviral/individual difference/data analysis/output/cleanedDf_indDiff.csv")
+```
+
+```{r}
+ind1<-grep("RSE1", colnames(cleanDf))
+ind2<-grep("RSE10", colnames(cleanDf))
+ind1<-min(ind1)
+ind2<-max(ind2)
+SE <- cleanDf[, ind1:ind2]
+SE <- scale(SE)
+```
+
+```{r}
+names(SE) <-c("Satisfied", "No.Good", "Good.Qualities", "Good.Others", "Not.Proud", "Useless", 
+                         "Worth", "Respect", "Failure", "Pos.Att")
+```
+
+
+```{r}
+#Network <-estimateNetwork(SE,default = "EBICglasso" ,  threshold = FALSE, corMethod = "cor_auto")
+Network <-estimateNetwork(SE, default = "EBICglasso" ,  threshold = TRUE, corMethod = "cor", corArgs = list(method = "spearman", use = "pairwise.complete.obs"))
+
+Network2 <-estimateNetwork(SE, default = "EBICglasso" ,  threshold = TRUE, corMethod = "cor_auto")
+
+Network3 <-estimateNetwork(SE,
+              default = "ggmModSelect",
+              stepwise = TRUE,
+              corMethod = "cor",
+              corArgs = list(method = "spearman", use = "pairwise.complete.obs"))
+```
+
+```{r}
+pNet<-plot(Network3, layout = 'spring')
+```
+
+# Weight Matrix
+
+```{r}
+graph1mat <- getWmat(pNet)
+graph1mat #visualize weight matrix
+```
+
+# Mean Edge Weight
+
+```{r}
+mean(graph1mat)
+```
+
+# Mean Predictability of Network
+
+```{r}
+type=rep('g', 10) #g=gaussian, 28 = number of nodes in the network
+fit1<-mgm(SE,
+          type=type, 
+          level=rep(1,10))
+pred1<- predict(fit1, SE)
+pred1$error
+mean(pred1$error$R2)
+
+#Mean node predictability is 68.03
+```
+Mean node predictability is 68.03%
+
+Centrality estimates
+
+```{r}
+centralityPlot(Network3, include = c("Strength","ExpectedInfluence","Betweenness","Closeness"),
+               orderBy = "ExpectedInfluence")
+```
+
+
+
+```{r}
+#centrality criteria 
+Network.c <- centrality(Network)
+as.data.frame(Network.c$InDegree)
+as.data.frame(Network.c$InExpectedInfluence)
+as.data.frame(Network.c$Closeness)
+as.data.frame(Network.c$Betweenness)
+```
+
+# 
+
+```{r}
+sum(abs(Network$graph))/2 
+ 
+#global density: 4.37578
+```
+
+
+```{r}
+cor(Network.c$InDegree, Network.c$Betweenness, method = "spearman") 
+cor(Network.c$InDegree, Network.c$Closeness, method = "spearman") 
+cor(Network.c$Closeness, Network.c$Betweenness, method = "spearman") 
+```
+
+```{r}
+cent <- as.data.frame(scale(centrality(Network)$InDegree))
+cent <- mutate(cent, id = rownames(cent))
+colnames(cent) <- c("1", "RSE_Item")
+cent_long <- melt(cent, id="RSE_Item")
+
+strengthplot <- ggplot(data=cent_long, aes(x=RSE_Item, y=value, group=1)) +
+  geom_line() +
+  #geom_point(shape = 21, fill = "white", size = 1.5, stroke = 1) +
+  xlab(" ") + ylab("Centrality") +
+  #scale_y_continuous(limits = c(-3, 3)) + 
+  #scale_x_discrete(limits=c(1:28)) +
+  theme_bw() +
+  theme(panel.grid.minor=element_blank(), axis.text.x = element_text(angle = 45, hjust = 1))
+strengthplot
+```
+
+# Estimate small worldness
+
+```{r}
+smallworldness(Network, B = 1000, up = 0.995, lo = 0.005)
+```
+
+# Estimate edge-weight stability with bootstrapping
+
+```{r message=FALSE, warning=TRUE, paged.print=FALSE}
+boot1a <- bootnet(Network3, default ="EBICglasso", nBoots = 1000, nCores = 1)
+plot(boot1a, labels = TRUE, order = "sample") 
+```
+
+# Estimate stability of centrality after proportion of sample has been removed
+
+```{r message=FALSE, warning=TRUE, paged.print=FALSE}
+sub<-SE[1:10]
+boot1b <- bootnet(Network, default ="EBICglasso", nBoots = 5000, type = "case", statistics = c("strength", "edge", "betweenness", "closeness", "expectedInfluence", "distance"), caseN = 50)
+plot(boot1b)
+```
+
+```{r}
+corStability(boot1b)
+```
+
+# Is node x significantly more central than node y?
+
+```{r message=FALSE, warning=TRUE, paged.print=FALSE}
+boot1 <- bootnet(Network3, ncores=1, nboots=2000)
+boot4 <- plot(boot1, "strength", order="sample", labels=TRUE) 
+boot4
+```
+
+```{r}
+#Fig3 - Edge weight difference: is edge X significantly larger than edge Y? Black=Y Gray=N 
+boot5 <- plot(boot1, "edge", plot = "difference", onlyNonZero = TRUE, order = "sample")
+plot(boot5)
+```
+
+
+
+```{r message=FALSE, warning=TRUE, paged.print=FALSE}
+boots <- bootnet(Network, statistics = "ExpectedInfluence", 
+                 nBoots = 1000, nCores = 1, type = "case")
+
+plot(boots, statistics = "ExpectedInfluence") + 
+  theme(legend.position = "none")
+```
+
+```{r}
+net_relimp <- estimateNetwork(sub,
+              default = "relimp",
+              normalize = FALSE)
+```
+
+```{r}
+plot(net_relimp, layout = "spring")
+```
+
+```{r}
+boot_relimp<- bootnet(net_relimp, nBoots = 100, nCores = 1)
+```
+
+```{r}
+plot(boot_relimp, order = "sample")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
