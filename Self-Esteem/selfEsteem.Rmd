@@ -16,12 +16,22 @@ library(readr)
 library(igraph)
 library(reshape2)
 library(data.table)
+library(tidyverse)
 ```
 
 
 ```{r}
-cleanDf <- read.csv("/Volumes/Research Project/Trait Network_Behaviral/individual difference/data analysis/output/cleanedDf_indDiff.csv")
+library(here)
+here::i_am("./Self-Esteem/selfEsteem.Rmd")
+cleanDf <- data.table::fread(here("Self-Esteem","RSE","data.csv"))
 ```
+
+```{r}
+oldnames = paste0("Q",1:10)
+newnames = paste0("RSE",1:10)
+cleanDf <- cleanDf %>% rename_at(vars(oldnames), ~ newnames)
+```
+
 
 ```{r}
 ind1<-grep("RSE1", colnames(cleanDf))
@@ -33,7 +43,7 @@ SE <- scale(SE)
 ```
 
 ```{r}
-names(SE) <-c("Satisfied", "No.Good", "Good.Qualities", "Good.Others", "Not.Proud", "Useless", 
+colnames(SE) <-c("Satisfied", "No.Good", "Good.Qualities", "Good.Others", "Not.Proud", "Useless", 
                          "Worth", "Respect", "Failure", "Pos.Att")
 ```
 
@@ -52,7 +62,7 @@ Network3 <-estimateNetwork(SE,
 ```
 
 ```{r}
-pNet<-plot(Network3, layout = 'spring')
+pNet<-plot(Network, layout = 'spring')
 ```
 
 # Weight Matrix
@@ -94,7 +104,7 @@ centralityPlot(Network3, include = c("Strength","ExpectedInfluence","Betweenness
 
 ```{r}
 #centrality criteria 
-Network.c <- centrality(Network)
+Network.c <- centrality(Network3)
 as.data.frame(Network.c$InDegree)
 as.data.frame(Network.c$InExpectedInfluence)
 as.data.frame(Network.c$Closeness)
@@ -117,7 +127,7 @@ cor(Network.c$Closeness, Network.c$Betweenness, method = "spearman")
 ```
 
 ```{r}
-cent <- as.data.frame(scale(centrality(Network)$InDegree))
+cent <- as.data.frame(scale(centrality(Network3)$InDegree))
 cent <- mutate(cent, id = rownames(cent))
 colnames(cent) <- c("1", "RSE_Item")
 cent_long <- melt(cent, id="RSE_Item")
@@ -133,6 +143,22 @@ strengthplot <- ggplot(data=cent_long, aes(x=RSE_Item, y=value, group=1)) +
 strengthplot
 ```
 
+```{r}
+centralityTable(Network3)
+```
+
+```{r}
+library("igraph")
+g = graph.adjacency(Network3$graph, weighted=T)
+sgc <- spinglass.community(g)
+sgc$membership
+
+g = graph.adjacency(Network3$graph, weighted=T)
+sgc <- walktrap.community(g)
+sgc$membership
+```
+
+
 # Estimate small worldness
 
 ```{r}
@@ -142,7 +168,7 @@ smallworldness(Network, B = 1000, up = 0.995, lo = 0.005)
 # Estimate edge-weight stability with bootstrapping
 
 ```{r message=FALSE, warning=TRUE, paged.print=FALSE}
-boot1a <- bootnet(Network3, default ="EBICglasso", nBoots = 1000, nCores = 1)
+boot1a <- bootnet(Network3, default ="EBICglasso", nBoots = 1000, nCores = 4)
 plot(boot1a, labels = TRUE, order = "sample") 
 ```
 
